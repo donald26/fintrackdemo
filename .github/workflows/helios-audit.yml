@@ -1,0 +1,35 @@
+name: Helios Governance Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  helios-audit:
+    name: Helios Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aegis governance gate
+        env:
+          HELIOS_REGISTRY_TOKEN: ${{ secrets.HELIOS_REGISTRY_TOKEN }}
+          HELIOS_ORG_ID: ${{ vars.HELIOS_ORG_ID }}
+          HELIOS_REGISTRY_URL: ${{ vars.HELIOS_REGISTRY_URL }}
+        run: |
+          RESULT=$(curl -sf \
+            -H "Authorization: Bearer $HELIOS_REGISTRY_TOKEN" \
+            -H "X-Org-ID: $HELIOS_ORG_ID" \
+            "$HELIOS_REGISTRY_URL/v1/audits/aegis-gate?repo_id=${{ github.repository }}&pr_number=${{ github.event.number }}&sha=${{ github.event.pull_request.head.sha }}" \
+            || echo '{"status":"SKIP"}')
+
+          STATUS=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','BLOCK'))")
+          SCORE=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('score','?'))")
+          REASONS=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('decision_reasons',[]))")
+
+          echo "Aegis decision: $STATUS | Score: $SCORE"
+          echo "Reasons: $REASONS"
+
+          if [ "$STATUS" = "PASS" ]; then exit 0
+          elif [ "$STATUS" = "WARN" ]; then exit 0
+          elif [ "$STATUS" = "SKIP" ]; then echo "No Pulse audit yet — skipping"; exit 0
+          else exit 1
+          fi
